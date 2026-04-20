@@ -2,6 +2,7 @@ const { exec } = require("child_process");
 const fs = require("fs");
 const archiver = require("archiver");
 const { google } = require("googleapis");
+console.log("ENV CHECK:", process.env.GOOGLE_CREDENTIALS);
 
 // 🔥 Service Account
 const auth = new google.auth.GoogleAuth({
