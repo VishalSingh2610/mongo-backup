@@ -4,5 +4,9 @@
   "main": "backup.js",
   "scripts": {
     "start": "node backup.js"
+  },
+  "dependencies": {
+    "archiver": "^5.3.1",
+    "googleapis": "^133.0.0"
   }
 }
