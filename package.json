@@ -1,0 +1,8 @@
+{
+  "name": "mongo-backup",
+  "version": "1.0.0",
+  "main": "backup.js",
+  "scripts": {
+    "start": "node backup.js"
+  }
+}
