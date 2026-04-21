@@ -1,3 +1,6 @@
+console.log("TEST:", process.env.TEST_VAR);
+process.exit(0);
+
 const { exec } = require("child_process");
 const fs = require("fs");
 const archiver = require("archiver");
