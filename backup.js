@@ -1,13 +1,15 @@
-console.log("ALL ENV:", process.env);
-console.log("TEST:", process.env.TEST_VAR);
-
-const { exec } = require("child_process");
 const fs = require("fs");
 const archiver = require("archiver");
 const { google } = require("googleapis");
-console.log("ENV CHECK:", process.env.GOOGLE_CREDENTIALS);
+const { MongoClient } = require("mongodb");
 
-// 🔥 Service Account
+console.log("🚀 Backup Service Started");
+
+// 🔐 ENV CHECK
+console.log("MONGO_URI:", process.env.MONGO_URI ? "✅ Loaded" : "❌ Missing");
+console.log("GOOGLE_CREDENTIALS:", process.env.GOOGLE_CREDENTIALS ? "✅ Loaded" : "❌ Missing");
+
+// 🔥 Google Auth
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ["https://www.googleapis.com/auth/drive"],
@@ -15,33 +17,61 @@ const auth = new google.auth.GoogleAuth({
 
 const drive = google.drive({ version: "v3", auth });
 
-const uri = process.env.MONGO_URI;
+// 🔥 Mongo Backup Function
+async function backupDatabase() {
+  try {
+    console.log("📦 Connecting to MongoDB...");
 
-// STEP 1: Dump
-const dumpCommand = `mongodump --uri="${uri}" --out=backup`;
+    const client = new MongoClient(process.env.MONGO_URI);
+    await client.connect();
 
-console.log("Starting backup...");
+    const db = client.db();
+    const collections = await db.listCollections().toArray();
 
-exec(dumpCommand, async (error, stdout, stderr) => {
-  if (error) {
-    console.error("Dump Error:", error);
-    return;
+    const data = {};
+
+    console.log("📥 Fetching collections...");
+
+    for (let col of collections) {
+      const docs = await db.collection(col.name).find().toArray();
+      data[col.name] = docs;
+    }
+
+    fs.writeFileSync("backup.json", JSON.stringify(data, null, 2));
+
+    console.log("✅ Backup JSON created");
+
+    await client.close();
+
+  } catch (err) {
+    console.error("❌ Mongo Backup Error:", err);
+    throw err;
   }
+}
 
-  console.log("Backup done");
+// 🔥 Zip Function
+async function createZip() {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream("backup.zip");
+    const archive = archiver("zip");
 
-  // STEP 2: Zip
-  const output = fs.createWriteStream("backup.zip");
-  const archive = archiver("zip");
+    archive.pipe(output);
 
-  archive.pipe(output);
-  archive.directory("backup/", false);
+    archive.file("backup.json", { name: "backup.json" });
 
-  await archive.finalize();
+    archive.on("end", () => {
+      console.log("📦 Zip created");
+      resolve();
+    });
 
-  console.log("Zip created");
+    archive.on("error", (err) => reject(err));
 
-  // STEP 3: Upload to Drive
+    archive.finalize();
+  });
+}
+
+// 🔥 Upload to Drive
+async function uploadToDrive() {
   try {
     const response = await drive.files.create({
       requestBody: {
@@ -53,8 +83,25 @@ exec(dumpCommand, async (error, stdout, stderr) => {
       },
     });
 
-    console.log("Uploaded to Drive ✅", response.data.id);
+    console.log("☁️ Uploaded to Drive ✅", response.data.id);
+
   } catch (err) {
-    console.error("Upload Error:", err);
+    console.error("❌ Drive Upload Error:", err);
   }
-});
+}
+
+// 🔥 MAIN FLOW
+async function runBackup() {
+  try {
+    await backupDatabase();
+    await createZip();
+    await uploadToDrive();
+
+    console.log("🎉 BACKUP COMPLETED SUCCESSFULLY");
+
+  } catch (err) {
+    console.error("💥 Backup Failed:", err);
+  }
+}
+
+runBackup();
