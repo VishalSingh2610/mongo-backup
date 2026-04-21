@@ -78,6 +78,7 @@ async function uploadToDrive() {
     const response = await drive.files.create({
       requestBody: {
         name: `backup-${Date.now()}.zip`,
+	parents: ["1Y1pCDDvIhDvpyFjw8_MAb87bFsDVmKoH"],
       },
       media: {
         mimeType: "application/zip",
