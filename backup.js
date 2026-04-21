@@ -22,6 +22,8 @@ async function backupDatabase() {
   try {
     console.log("📦 Connecting to MongoDB...");
 
+    console.log("FINAL URI:", process.env.MONGO_URI);
+
     const client = new MongoClient(process.env.MONGO_URI);
     await client.connect();
 
