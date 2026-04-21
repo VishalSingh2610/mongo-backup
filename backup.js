@@ -9,9 +9,13 @@ console.log("🚀 Backup Service Started");
 console.log("MONGO_URI:", process.env.MONGO_URI ? "✅ Loaded" : "❌ Missing");
 console.log("GOOGLE_CREDENTIALS:", process.env.GOOGLE_CREDENTIALS ? "✅ Loaded" : "❌ Missing");
 
+// 🔥 PRINT SERVICE ACCOUNT EMAIL (IMPORTANT DEBUG)
+const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+console.log("SERVICE EMAIL:", creds.client_email);
+
 // 🔥 Google Auth
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  credentials: creds,
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
 
@@ -21,7 +25,6 @@ const drive = google.drive({ version: "v3", auth });
 async function backupDatabase() {
   try {
     console.log("📦 Connecting to MongoDB...");
-
     console.log("FINAL URI:", process.env.MONGO_URI);
 
     const client = new MongoClient(process.env.MONGO_URI);
@@ -58,7 +61,6 @@ async function createZip() {
     const archive = archiver("zip");
 
     archive.pipe(output);
-
     archive.file("backup.json", { name: "backup.json" });
 
     archive.on("end", () => {
@@ -72,18 +74,19 @@ async function createZip() {
   });
 }
 
-// 🔥 Upload to Drive
+// 🔥 Upload to Drive (FINAL FIX)
 async function uploadToDrive() {
   try {
     const response = await drive.files.create({
       requestBody: {
         name: `backup-${Date.now()}.zip`,
-	      parents: ["1Y1pCDDvIhDvpyFjw8_MAb87bFsDVmKoH"],
+        parents: ["1Y1pCDDvIhDvpyFjw8_MAb87bFsDVmKoH"], // ✅ folder id
       },
       media: {
         mimeType: "application/zip",
         body: fs.createReadStream("backup.zip"),
       },
+      supportsAllDrives: true, // 🔥 MOST IMPORTANT FIX
     });
 
     console.log("☁️ Uploaded to Drive ✅", response.data.id);
