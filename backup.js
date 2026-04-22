@@ -1,60 +1,51 @@
 const fs = require("fs");
-const archiver = require("archiver");
 const { google } = require("googleapis");
 const { MongoClient } = require("mongodb");
+const archiver = require("archiver");
 
 console.log("🚀 Backup Service Started");
 
-// 🔐 ENV CHECK
+// ENV CHECK
 console.log("MONGO_URI:", process.env.MONGO_URI ? "✅ Loaded" : "❌ Missing");
-console.log("GOOGLE_CREDENTIALS:", process.env.GOOGLE_CREDENTIALS ? "✅ Loaded" : "❌ Missing");
+console.log("GOOGLE_TOKEN:", process.env.GOOGLE_TOKEN ? "✅ Loaded" : "❌ Missing");
 
-// 🔥 Parse credentials
-const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-console.log("SERVICE EMAIL:", creds.client_email);
+// 🔥 OAuth setup (NO INTERACTIVE)
+const oAuth2Client = new google.auth.OAuth2(
+  process.env.CLIENT_ID,
+  process.env.CLIENT_SECRET,
+  "http://localhost"
+);
 
-// 🔥 Google Auth (FIXED SCOPE ✅)
-const auth = new google.auth.GoogleAuth({
-  credentials: creds,
-  scopes: ["https://www.googleapis.com/auth/drive.file"], // 🔥 FIX
-});
+// 🔥 Load token from ENV
+const token = JSON.parse(process.env.GOOGLE_TOKEN);
+oAuth2Client.setCredentials(token);
 
-const drive = google.drive({ version: "v3", auth });
+const drive = google.drive({ version: "v3", auth: oAuth2Client });
 
 // 🔥 Mongo Backup
 async function backupDatabase() {
-  try {
-    console.log("📦 Connecting to MongoDB...");
-    console.log("FINAL URI:", process.env.MONGO_URI);
+  const client = new MongoClient(process.env.MONGO_URI);
+  await client.connect();
 
-    const client = new MongoClient(process.env.MONGO_URI);
-    await client.connect();
+  const db = client.db();
+  const collections = await db.listCollections().toArray();
 
-    const db = client.db();
-    const collections = await db.listCollections().toArray();
+  const data = {};
 
-    const data = {};
+  console.log("📥 Fetching collections...");
 
-    console.log("📥 Fetching collections...");
-
-    for (let col of collections) {
-      const docs = await db.collection(col.name).find().toArray();
-      data[col.name] = docs;
-    }
-
-    fs.writeFileSync("backup.json", JSON.stringify(data, null, 2));
-
-    console.log("✅ Backup JSON created");
-
-    await client.close();
-
-  } catch (err) {
-    console.error("❌ Mongo Backup Error:", err);
-    throw err;
+  for (let col of collections) {
+    data[col.name] = await db.collection(col.name).find().toArray();
   }
+
+  fs.writeFileSync("backup.json", JSON.stringify(data, null, 2));
+
+  console.log("✅ Backup JSON created");
+
+  await client.close();
 }
 
-// 🔥 Zip
+// 🔥 ZIP
 async function createZip() {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream("backup.zip");
@@ -68,46 +59,45 @@ async function createZip() {
       resolve();
     });
 
-    archive.on("error", (err) => reject(err));
+    archive.on("error", reject);
 
     archive.finalize();
   });
 }
 
-// 🔥 Upload (FINAL FIXED)
-async function uploadToDrive() {
+// 🔥 Upload to Drive
+async function upload() {
   try {
-    const response = await drive.files.create({
+    const res = await drive.files.create({
       requestBody: {
         name: `backup-${Date.now()}.zip`,
-        parents: ["1Y1pCDDvIhDvpyFjw8_MAb87bFsDVmKoH"], // ✅ folder id
+        parents: ["1Y1pCDDvIhDvpyFjw8_MAb87bFsDVmKoH"], // folder ID
       },
       media: {
         mimeType: "application/zip",
         body: fs.createReadStream("backup.zip"),
       },
-      supportsAllDrives: true,
     });
 
-    console.log("☁️ Uploaded to Drive ✅", response.data.id);
+    console.log("☁️ Uploaded:", res.data.id);
 
   } catch (err) {
-    console.error("❌ Drive Upload Error:", err);
+    console.error("❌ Upload Error:", err);
   }
 }
 
 // 🔥 MAIN
-async function runBackup() {
+async function main() {
   try {
     await backupDatabase();
     await createZip();
-    await uploadToDrive();
+    await upload();
 
-    console.log("🎉 BACKUP COMPLETED SUCCESSFULLY");
+    console.log("🎉 BACKUP COMPLETED");
 
   } catch (err) {
-    console.error("💥 Backup Failed:", err);
+    console.error("💥 ERROR:", err);
   }
 }
 
-runBackup();
+main();
